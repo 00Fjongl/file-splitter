@@ -11,7 +11,7 @@ inputSplit.addEventListener('input',async()=>{
   const fileName=inputSplit.files[0].name;
   const file=new Uint8Array(await inputSplit.files[0].arrayBuffer()),last_byte_index=file.length-1;
   const chunk_size=Math.min(params[0].value,8e6);
-  let new_file=[new File([JSON.stringify([inputSplit.files[0].type,8-file.length%8])],fileName+'_0',{type:'text/plain'})];
+  let new_file=[new File([JSON.stringify([inputSplit.files[0].type,(8-file.length%8)%8])],fileName+'_0',{type:'text/plain'})];
   for(let l=0,segments=file.length/chunk_size;l<segments;l++){
     const new_segment=[[],[],[],[],[],[],[],[]];
     const promises=[];
@@ -53,7 +53,7 @@ inputJoin.addEventListener('input',async()=>{
       r(file_split);
     }));
     (await Promise.all(promises)).forEach(a=>{for(let i=0;i<8;i++)newSegment.push(a[i])});
-    if(f==inputFiles.length-1)newSegment.splice(-remainder);
+    f==inputFiles.length-1&&remainder&&newSegment.splice(-remainder);
     newFile=newFile.concat(new Uint8Array(newSegment).buffer);
   }
   newFile=new File(newFile,inputFiles[0].name.replace(/_\d+$/,''),{type:fileType});
