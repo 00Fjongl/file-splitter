@@ -3,13 +3,17 @@ const inputJoin=document.querySelectorAll('input[type=file]')[1];
 const params=document.querySelectorAll('input[type=text]');
 const fileDisplay=document.getElementById('fileDisplay');
 
+// Download all files, if multiple file downloads are allowed and not waiting too long.
 fileDisplay.firstElementChild.addEventListener('click',()=>{
-  [...fileDisplay.children].slice(1).forEach(a=>{a.click()});
+  [...fileDisplay.children].slice(1).forEach(a=>{
+    fileDisplay.children.length>8&&alert("Many files are being downloaded at once. This alert prevents later downloads from hanging and being canceled.");
+    a.click();
+  });
 });
 
 inputSplit.addEventListener('input',async()=>{
   const fileName=inputSplit.files[0].name;
-  const file=new Uint8Array(await inputSplit.files[0].arrayBuffer()),lastByteIndex=file.length-1;
+  const file=new Uint8Array(await inputSplit.files[0].arrayBuffer());
   const chunkSize=Math.min(params[0].value,8e6);
   let newFile=[new File([JSON.stringify([inputSplit.files[0].type,(8-file.length%8)%8])],fileName+'_0',{type:'text/plain'})];
   for(let l=0,segments=file.length/chunkSize;l<segments;l++){
