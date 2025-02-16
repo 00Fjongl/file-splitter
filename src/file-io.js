@@ -9,23 +9,23 @@ fileDisplay.firstElementChild.addEventListener('click',()=>{
 
 inputSplit.addEventListener('input',async()=>{
   const fileName=inputSplit.files[0].name;
-  const file=new Uint8Array(await inputSplit.files[0].arrayBuffer()),last_byte_index=file.length-1;
-  const chunk_size=Math.min(params[0].value,8e6);
-  let new_file=[new File([JSON.stringify([inputSplit.files[0].type,(8-file.length%8)%8])],fileName+'_0',{type:'text/plain'})];
-  for(let l=0,segments=file.length/chunk_size;l<segments;l++){
-    const new_segment=[[],[],[],[],[],[],[],[]];
+  const file=new Uint8Array(await inputSplit.files[0].arrayBuffer()),lastByteIndex=file.length-1;
+  const chunkSize=Math.min(params[0].value,8e6);
+  let newFile=[new File([JSON.stringify([inputSplit.files[0].type,(8-file.length%8)%8])],fileName+'_0',{type:'text/plain'})];
+  for(let l=0,segments=file.length/chunkSize;l<segments;l++){
+    const newSegment=[[],[],[],[],[],[],[],[]];
     const promises=[];
-    for(let k=0,length=Math.min(l+1>segments?file.length%chunk_size:file.length,chunk_size)/8;k<length;k++)promises.push(new Promise(r=>{
-      const file_split=new Uint8Array(8);
-      for(let h=k*8+l*chunk_size,j=h+8;h<j;h++)
-        for(let i=0;i<8;i++)file_split[i]=file_split[i]<<1|file[h]>>i&1;
-      r(file_split);
+    for(let k=0,length=Math.min(l+1>segments?file.length%chunkSize:file.length,chunkSize)/8;k<length;k++)promises.push(new Promise(r=>{
+      const fileSplit=new Uint8Array(8);
+      for(let h=k*8+l*chunkSize,j=h+8;h<j;h++)
+        for(let i=0;i<8;i++)fileSplit[i]=fileSplit[i]<<1|file[h]>>i&1;
+      r(fileSplit);
     }));
-    (await Promise.all(promises)).forEach(a=>{for(let i=0;i<8;i++)new_segment[i].push(a[i])});
-    new_file=new_file.concat(new File(new_segment.map(s=>new Uint8Array(s).buffer),fileName+'_'+(l+1),{type:''}));
+    (await Promise.all(promises)).forEach(a=>{for(let i=0;i<8;i++)newSegment[i].push(a[i])});
+    newFile=newFile.concat(new File(newSegment.map(s=>new Uint8Array(s).buffer),fileName+'_'+(l+1),{type:''}));
   }
-  console.log(new_file);
-  new_file.forEach(a=>{
+  console.log(newFile);
+  newFile.forEach(a=>{
     let file=document.createElement('a');
     file.innerText=a.name;
     file.setAttribute('download',a.name);
@@ -47,10 +47,10 @@ inputJoin.addEventListener('input',async()=>{
     const newSegment=[];
     const promises=[];
     for(let k=0;k<segmentLength;k++)promises.push(new Promise(r=>{
-      const file_split=new Uint8Array(8);
+      const fileSplit=new Uint8Array(8);
       for(let h=0;h<8;h++)
-        for(let i=0;i<8;i++)file_split[h]=file_split[h]<<1|fileSegments[7-i][k]>>(7-h)&1;
-      r(file_split);
+        for(let i=0;i<8;i++)fileSplit[h]=fileSplit[h]<<1|fileSegments[7-i][k]>>(7-h)&1;
+      r(fileSplit);
     }));
     (await Promise.all(promises)).forEach(a=>{for(let i=0;i<8;i++)newSegment.push(a[i])});
     f==inputFiles.length-1&&remainder&&newSegment.splice(-remainder);
