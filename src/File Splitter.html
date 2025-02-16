@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang=en>
+<head>
+<meta charset=UTF-8>
+<meta name=viewport content="width=device-width,initial-scale=1">
+<title>File Splitter</title>
+<style>
+#fileDisplay{display:grid}#fileDisplay>*{cursor:copy}
+</style>
+</head>
+<body>
+<input type=text placeholder="Chunk Size (bits)" value=8000000>
+<br>
+<a onclick=this.nextElementSibling.click()>Split File</a>
+<input type=file style=display:none>
+<br>
+<a onclick=this.nextElementSibling.click()>Unsplit File</a>
+<input type=file multiple style=display:none>
+<br>
+<div id=fileDisplay><a>Download all</a></div>
+<script>
+const inputSplit=document.querySelectorAll('input[type=file]')[0];
+const inputJoin=document.querySelectorAll('input[type=file]')[1];
+const params=document.querySelectorAll('input[type=text]');
+const fileDisplay=document.getElementById('fileDisplay');
+
+fileDisplay.firstElementChild.addEventListener('click',()=>{
+  [...fileDisplay.children].slice(1).forEach(a=>{a.click()});
+});
+
+inputSplit.addEventListener('input',async()=>{
+  const fileName=inputSplit.files[0].name;
+  const file=new Uint8Array(await inputSplit.files[0].arrayBuffer()),last_byte_index=file.length-1;
+  const chunk_size=Math.min(params[0].value,8e6);
+  let new_file=[new File([JSON.stringify([file.type,file.length%8])],fileName+'_0',{type:'text/plain'})];
+  for(let l=0,segments=file.length/chunk_size;l<segments;l++){
+    const new_segment=[[],[],[],[],[],[],[],[]];
+    const promises=[];
+    for(let k=0,length=Math.min(l+1>segments?file.length%chunk_size:file.length,chunk_size)/8;k<length;k++)promises.push(new Promise(r=>{
+      const file_split=new Uint8Array(8);
+      for(let h=k*8+l*chunk_size,j=h+8;h<j;h++)
+        for(let i=0;i<8;i++)file_split[i]=file_split[i]<<1|file[h]>>i&1;
+      r(file_split);
+    }));
+    (await Promise.all(promises)).forEach(a=>{for(let i=0;i<8;i++)new_segment[i].push(a[i])});
+    new_file=new_file.concat(new File(new_segment.map(s=>new Uint8Array(s).buffer),fileName+'_'+(l+1),{type:''}));
+  }
+  console.log(new_file);
+  new_file.forEach(a=>{
+    let file=document.createElement('a');
+    file.innerText=a.name;
+    file.setAttribute('download',a.name);
+    fileDisplay.appendChild(file);
+    file.addEventListener('click',()=>{
+      setTimeout(self.URL.revokeObjectURL,0,file.href=self.URL.createObjectURL(a));
+    });
+  });
+});
+
+inputJoin.addEventListener('input',async()=>{
+  const inputFiles=[...inputJoin.files].sort((a,b)=>a.name.replace(/[^]+?(?=\d+$)/,'')-b.name.replace(/[^]+?(?=\d+$)/,''));
+  const [fileType,remainder]=JSON.parse(await inputFiles[0].text());
+  let newFile=[];
+  for(let f=1;f<inputFiles.length;f++){
+    const segment=new Uint8Array(await inputFiles[f].arrayBuffer()),segmentLength=segment.length>>3;
+    const fileSegments=[];
+    for(let i=0;i<8;i++)fileSegments.push(segment.subarray(i*segmentLength,(i+1)*segmentLength));
+    const newSegment=[];
+    const promises=[];
+    for(let k=0;k<segmentLength;k++)promises.push(new Promise(r=>{
+      const file_split=new Uint8Array(8);
+      for(let h=0;h<8;h++)
+        for(let i=0;i<8;i++)file_split[h]=file_split[h]<<1|fileSegments[7-i][k]>>(7-h)&1;
+      r(file_split);
+    }));
+    (await Promise.all(promises)).forEach(a=>{for(let i=0;i<8;i++)newSegment.push(a[i])});
+    if(f==inputFiles.length-1)newSegment.splice(-remainder);
+    newFile=newFile.concat(new Uint8Array(newSegment).buffer);
+  }
+  newFile=new File(newFile,inputFiles[0].name.replace(/_\d+$/,''),{type:fileType});
+  console.log(newFile);
+  let file=document.createElement('a');
+  file.innerText=newFile.name;
+  file.setAttribute('download',newFile.name);
+  fileDisplay.appendChild(file);
+  file.addEventListener('click',()=>{
+    setTimeout(self.URL.revokeObjectURL,0,file.href=self.URL.createObjectURL(newFile));
+  });
+});
+</script>
+</body>
+</html>
