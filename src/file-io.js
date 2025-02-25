@@ -34,44 +34,46 @@ inputSplit.addEventListener('input', async () => {
 
   let completedFiles = 0;
   const workers = [];
-  for (let i = 0; i < navigator.hardwareConcurrency; i++) {
-    const shuffleWorker = new Worker('./shuffle.js');
-    shuffleWorker.addEventListener('message', (event) => {
-      const l = event.data[0];
-      const newSegment = event.data[1];
-      // Combine 8 chunks of data to create one file, and add it to the list of files.
-      newFile = newFile.concat(
-        new File(
-          newSegment.map((s) => new Uint8Array(s).buffer),
-          // The order of the split data is preserved by indexing the file names.
-          fileName + '_' + (l + 1),
-          { type: '' }
-        )
-      );
-      if (++completedFiles >= segments) {
-        console.log(newFile);
+  try {
+    for (let i = 0; i < navigator.hardwareConcurrency; i++) {
+      const shuffleWorker = new Worker('./shuffle.js');
+      shuffleWorker.addEventListener('message', (event) => {
+        const l = event.data[0];
+        const newSegment = event.data[1];
+        // Combine 8 chunks of data to create one file, and add it to the list of files.
+        newFile = newFile.concat(
+          new File(
+            newSegment.map((s) => new Uint8Array(s).buffer),
+            // The order of the split data is preserved by indexing the file names.
+            fileName + '_' + (l + 1),
+            { type: '' }
+          )
+        );
+        if (++completedFiles >= segments) {
+          console.log(newFile);
 
-        // Append all the files to the document to be displayed in a list.
-        newFile.forEach((a) => {
-          let file = document.createElement('a');
-          file.innerText = a.name;
-          file.setAttribute('download', a.name);
-          fileDisplay.appendChild(file);
+          // Append all the files to the document to be displayed in a list.
+          newFile.forEach((a) => {
+            let file = document.createElement('a');
+            file.innerText = a.name;
+            file.setAttribute('download', a.name);
+            fileDisplay.appendChild(file);
 
-          // Create a one-time-use download URL whenever the file name is clicked on.
-          file.addEventListener('click', () => {
-            setTimeout(
-              URL.revokeObjectURL,
-              0,
-              (file.href = URL.createObjectURL(a))
-            );
+            // Create a one-time-use download URL whenever the file name is clicked on.
+            file.addEventListener('click', () => {
+              setTimeout(
+                URL.revokeObjectURL,
+                0,
+                (file.href = URL.createObjectURL(a))
+              );
+            });
           });
-        });
-      }
-    });
-    shuffleWorker.postMessage([file, chunkSize]);
-    workers.push(shuffleWorker);
-  }
+        }
+      });
+      shuffleWorker.postMessage([file, chunkSize]);
+      workers.push(shuffleWorker);
+    }
+  } catch (e) {}
 
   // Divide the file into several chunks, then rearrange the bits.
   // TODO: Add option to disable this bit rearrangement and/or use encryption instead.
