@@ -21,6 +21,7 @@ inputSplit.addEventListener('input', async () => {
 
   // Greatly exceeding 8 MB may create too many simultaneous promises, causing a crash.
   const chunkSize = Math.min(params[0].value, 8e6);
+  const segments = file.length / chunkSize;
 
   // Add a file containing necessary metadata (e.g., MIME type).
   let newFile = [
@@ -31,73 +32,123 @@ inputSplit.addEventListener('input', async () => {
     ),
   ];
 
+  let completedFiles = 0;
+  const workers = [];
+  for (let i = 0; i < navigator.hardwareConcurrency; i++) {
+    const shuffleWorker = new Worker('./shuffle.js');
+    shuffleWorker.addEventListener('message', (event) => {
+      const l = event.data[0];
+      const newSegment = event.data[1];
+      // Combine 8 chunks of data to create one file, and add it to the list of files.
+      newFile = newFile.concat(
+        new File(
+          newSegment.map((s) => new Uint8Array(s).buffer),
+          // The order of the split data is preserved by indexing the file names.
+          fileName + '_' + (l + 1),
+          { type: '' }
+        )
+      );
+      if (++completedFiles >= segments) {
+        console.log(newFile);
+
+        // Append all the files to the document to be displayed in a list.
+        newFile.forEach((a) => {
+          let file = document.createElement('a');
+          file.innerText = a.name;
+          file.setAttribute('download', a.name);
+          fileDisplay.appendChild(file);
+
+          // Create a one-time-use download URL whenever the file name is clicked on.
+          file.addEventListener('click', () => {
+            setTimeout(
+              URL.revokeObjectURL,
+              0,
+              (file.href = URL.createObjectURL(a))
+            );
+          });
+        });
+      }
+    });
+    shuffleWorker.postMessage([file, chunkSize]);
+    workers.push(shuffleWorker);
+  }
+
   // Divide the file into several chunks, then rearrange the bits.
   // TODO: Add option to disable this bit rearrangement and/or use encryption instead.
-  for (let l = 0, segments = file.length / chunkSize; l < segments; l++) {
-    const newSegment = [[], [], [], [], [], [], [], []];
-    const promises = [];
-    for (
-      let k = 0,
-        length =
-          Math.min(
-            l + 1 > segments ? file.length % chunkSize : file.length,
-            chunkSize
-          ) / 8;
-      k < length;
-      k++
-    )
-      // For every 8 bytes, create a promise that will later rearrange the bits.
-      // Promises are used to perform this rearrangement asynchronously / in parallel.
-      promises.push(
-        new Promise((r) => {
-          /* Rearrange the bits 8 bytes at a time. Divide each byte into 8 bits.
-           * Each bit is sent to a corresponding index in the array.
-           * For example, the 1st bit of each byte is sent to the 0th index.
-           * The 2nd bit of each byte is sent to the 1st index, and so on.
-           */
-          const fileSplit = new Uint8Array(8);
-          for (let h = k * 8 + l * chunkSize, j = h + 8; h < j; h++)
-            for (let i = 0; i < 8; i++)
-              fileSplit[i] = (fileSplit[i] << 1) | ((file[h] >> i) & 1);
-          r(fileSplit);
-        })
-      );
-
-    // Execute all promises in the chunk asynchronously. The total number of bytes
-    // should be a multiple of 8, due to the way the bits are rearranged.
-    (await Promise.all(promises)).forEach((a) => {
-      for (let i = 0; i < 8; i++) newSegment[i].push(a[i]);
-    });
-
-    // Combine 8 chunks of data to create one file, and add it to the list of files.
-    newFile = newFile.concat(
-      new File(
-        newSegment.map((s) => new Uint8Array(s).buffer),
-        // The order of the split data is preserved by indexing the file names.
-        fileName + '_' + (l + 1),
-        { type: '' }
+  for (let l = 0; l < segments; l++) {
+    if (workers.length) {
+      workers[l % workers.length].postMessage(l);
+    } else {
+      const newSegment = [[], [], [], [], [], [], [], []];
+      const promises = [];
+      for (
+        let k = 0,
+          length =
+            Math.min(
+              l + 1 > segments ? file.length % chunkSize : file.length,
+              chunkSize
+            ) / 8;
+        k < length;
+        k++
       )
-    );
+        // For every 8 bytes, create a promise that will later rearrange the bits.
+        // Promises are used to perform this rearrangement asynchronously / in parallel.
+        promises.push(
+          new Promise((r) => {
+            /* Rearrange the bits 8 bytes at a time. Divide each byte into 8 bits.
+             * Each bit is sent to a corresponding index in the array.
+             * For example, the 1st bit of each byte is sent to the 0th index.
+             * The 2nd bit of each byte is sent to the 1st index, and so on.
+             */
+            const fileSplit = new Uint8Array(8);
+            for (let h = k * 8 + l * chunkSize, j = h + 8; h < j; h++)
+              for (let i = 0; i < 8; i++)
+                fileSplit[i] = (fileSplit[i] << 1) | ((file[h] >> i) & 1);
+            r(fileSplit);
+          })
+        );
+
+      // Execute all promises in the chunk asynchronously. The total number of bytes
+      // should be a multiple of 8, due to the way the bits are rearranged.
+      (await Promise.all(promises)).forEach((a) => {
+        for (let i = 0; i < 8; i++) newSegment[i].push(a[i]);
+      });
+
+      // Combine 8 chunks of data to create one file, and add it to the list of files.
+      newFile = newFile.concat(
+        new File(
+          newSegment.map((s) => new Uint8Array(s).buffer),
+          // The order of the split data is preserved by indexing the file names.
+          fileName + '_' + (l + 1),
+          { type: '' }
+        )
+      );
+    }
   }
-  console.log(newFile);
+  if (!workers.length) {
+    console.log(newFile);
 
-  // Append all the files to the document to be displayed in a list.
-  newFile.forEach((a) => {
-    let file = document.createElement('a');
-    file.innerText = a.name;
-    file.setAttribute('download', a.name);
-    fileDisplay.appendChild(file);
+    // Append all the files to the document to be displayed in a list.
+    newFile.forEach((a) => {
+      let file = document.createElement('a');
+      file.innerText = a.name;
+      file.setAttribute('download', a.name);
+      fileDisplay.appendChild(file);
 
-    // Create a one-time-use download URL whenever the file name is clicked on.
-    file.addEventListener('click', () => {
-      setTimeout(URL.revokeObjectURL, 0, (file.href = URL.createObjectURL(a)));
+      // Create a one-time-use download URL whenever the file name is clicked on.
+      file.addEventListener('click', () => {
+        setTimeout(
+          URL.revokeObjectURL,
+          0,
+          (file.href = URL.createObjectURL(a))
+        );
+      });
     });
-  });
+  }
 });
 
 // Join several files that were split using this file splitter into one.
 inputJoin.addEventListener('input', async () => {
-
   // Ensure the files are in the correct order based on the indexed file names.
   const inputFiles = [...inputJoin.files].sort(
     (a, b) =>
@@ -111,7 +162,6 @@ inputJoin.addEventListener('input', async () => {
 
   // For the rest of the files, reverse the rearrangement of the data.
   for (let f = 1; f < inputFiles.length; f++) {
-
     // 8 chunks are generated at a time, so divide the file into 8 segments.
     const segment = new Uint8Array(await inputFiles[f].arrayBuffer()),
       segmentLength = segment.length >> 3;
